@@ -1,28 +1,13 @@
 from pyparsing import pythonStyleComment, Keyword, Regex, OneOrMore, Word, hexnums, nums
 from pyparsing import Suppress, MatchFirst, ZeroOrMore, Group, Combine, Optional, Literal
 
-from .ops import Mode
-
-
-class K(int):
-    bpf_type = Mode.IMM
-
-    def __repr__(self):
-        return '#{}'.format(self)
-
-
-class A(int):
-    bpf_type = Mode.ABS
-
-    def __repr__(self):
-        return '[{}]'.format(self)
+from .ops import A, K
 
 
 OPERATOR = Literal('+') | Literal('-')
 DECIMAL = Combine(Optional(OPERATOR) + Word(nums)).setParseAction(lambda t: int(t[0]))
 HEXADECIMAL = Suppress("0x") + Word(hexnums).setParseAction(lambda t: int(t[0], 16))
 VALUE = DECIMAL ^ HEXADECIMAL
-
 
 A_ADDRESS = (Suppress('[') + VALUE + Suppress(']')).setParseAction(lambda t: A(int(t[0])))
 K_ADDRESS = (Suppress('#') + VALUE).setParseAction(lambda t: K(int(t[0])))

@@ -62,6 +62,20 @@ class MiscOp(enum.IntEnum):
     TXA = 0x80
 
 
+class K(int):
+    bpf_type = Mode.IMM
+
+    def __repr__(self):
+        return '#{}'.format(self)
+
+
+class A(int):
+    bpf_type = Mode.ABS
+
+    def __repr__(self):
+        return '[{}]'.format(self)
+
+
 def bpf_jump(ops, k, jt, jf):
     return struct.pack('HBBI', ops, jt, jf, k)
 
