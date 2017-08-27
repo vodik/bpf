@@ -1,5 +1,6 @@
 import asyncio
 import socket
+from socket import IPPROTO_UDP
 
 import bpf
 from hexdump import hexdump
@@ -22,15 +23,16 @@ class RawProtocol(asyncio.Protocol):
 def main():
     bootp = bpf.compile(f'''
         ldh [0x24]
-        jneq #68, #7
+        jneq #68, reject
         ldh [0x14]
-        jset #0x1fff, #5
+        jset #0x1fff, reject
         ldb [0x17]
-        jneq #{socket.IPPROTO_UDP}, #3
+        jneq #{IPPROTO_UDP}, reject
         ldh [0x0c]
-        jneq #{ETH_P_IP}, #1
-        ret #-1
-        ret #0
+        jneq #{ETH_P_IP}, reject
+
+        accept: ret #-1
+        reject: ret #0
     ''')
 
     loop = asyncio.get_event_loop()
