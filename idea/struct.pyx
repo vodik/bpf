@@ -1,6 +1,5 @@
 # cython: language_level=3
 from cython cimport Py_buffer, Py_ssize_t
-from cpython.mem cimport PyMem_Malloc, PyMem_Free
 from cython.operator cimport dereference as deref, preincrement as inc
 from libc.stdint cimport uint8_t, uint32_t, uintptr_t
 from libc.string cimport memcpy, memset
@@ -30,40 +29,38 @@ ctypedef unordered_map[string, formatdef] formatmap
 
 cdef class View:
     cdef Struct struct
-    cdef uint8_t *buf
+    cdef uint8_t[:] buf
     cdef Py_ssize_t shape[1]
     cdef Py_ssize_t strides[1]
 
-    def __cinit__(self, Struct struct):
+    def __cinit__(self, Struct struct, uint8_t[:] buf):
         self.struct = struct
+        self.buf = buf
         self.shape[0] = len(struct)
         self.strides[0] = 1
-
-        self.buf = <uint8_t *>PyMem_Malloc(self.shape[0])
-        if not self.buf:
-            raise MemoryError()
-
-        memset(self.buf, 0, self.shape[0])
-
-    def __cdel__(self):
-        PyMem_Free(self.buf)
 
     def keys(self):
         yield from self.struct.keys()
 
     def __getitem__(self, key):
-        formatdef = self.struct.definition(key.encode())
-        return formatdef.unpack(&self.buf[formatdef.offset])
+        try:
+            formatdef = self.struct.definition(key.encode())
+            return formatdef.unpack(&self.buf[formatdef.offset])
+        except IndexError:
+            raise AttributeError(key) from None
 
     def __setitem__(self, key, value):
-        formatdef = self.struct.definition(key.encode())
-        formatdef.pack(&self.buf[formatdef.offset], value)
+        try:
+            formatdef = self.struct.definition(key.encode())
+            formatdef.pack(&self.buf[formatdef.offset], value)
+        except IndexError:
+            raise AttributeError(key) from None
 
     def __len__(self):
         return self.shape[0]
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
-        buffer.buf = self.buf
+        buffer.buf = &self.buf[0]
         buffer.format = 'B'
         buffer.internal = NULL
         buffer.itemsize = 1
@@ -80,34 +77,30 @@ cdef class View:
 
 
 cdef class Struct:
-    cdef str name
+    cdef Py_ssize_t length
     cdef formatmap offsets
+    cdef str name
 
-    def __cinit__(self, name):
+    def __cinit__(self, name, *fields):
+        cdef Py_ssize_t offset = 0
+        for name, field in fields:
+            assert field == 'uint32'
+
+            self.offsets[name.encode()] = formatdef(
+                offset=offset,
+                pack=pack_uint32,
+                unpack=unpack_uint32
+            )
+            offset += sizeof(uint32_t)
+
+        self.length = offset
         self.name = name
-        self.offsets[b'foo'] = formatdef(
-            offset=0,
-            pack=pack_uint32,
-            unpack=unpack_uint32
-        )
-
-        self.offsets[b'bar'] = formatdef(
-            offset=sizeof(uint32_t),
-            pack=pack_uint32,
-            unpack=unpack_uint32
-        )
-
-        self.offsets[b'baz'] = formatdef(
-            offset=sizeof(uint32_t) * 2,
-            pack=pack_uint32,
-            unpack=unpack_uint32
-        )
 
     def __len__(self):
-        return sizeof(uint32_t) * 3
+        return self.length
 
-    cdef formatdef definition(self, key):
-        return self.offsets[key]
+    cdef formatdef definition(self, key) except + :
+        return self.offsets.at(key)
 
     def keys(self):
         it = self.offsets.begin()
@@ -115,17 +108,28 @@ cdef class Struct:
             yield deref(it).first.decode()
             inc(it)
 
-    def parse(self, data):
-        pass
+    def parse(self, data not None):
+        return View.__new__(View, self, data)
 
     def create(self, **fields):
-        view = View.__new__(View, self)
+        data = bytearray(len(self))
+        view = View.__new__(View, self, data)
         for key, value in fields.items():
             view[key] = value
         return view
 
+    def __call__(self, **fields):
+        return self.create(**fields)
 
-Header = Struct('Header')
+    def __repr__(self):
+        return f'<Struct {self.name} len={len(self)}>'
+
+
+Header = Struct('Header',
+    ('foo', 'uint32'),
+    ('bar', 'uint32'),
+    ('baz', 'uint32'),
+)
 
 
 def main():
