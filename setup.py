@@ -2,6 +2,8 @@
 """The setup script."""
 
 from setuptools import setup, find_packages
+from setuptools.extension import Extension
+from Cython.Distutils import build_ext
 
 with open('README.rst') as readme_file:
     readme = readme_file.read()
@@ -11,6 +13,11 @@ with open('HISTORY.rst') as history_file:
 
 requirements = [
     'pyparsing'
+]
+
+ext_modules = [
+    Extension("idea.struct", ["idea/struct.pyx"], language="c++",
+              extra_compile_args=["-std=c++11"])
 ]
 
 setup(
@@ -36,4 +43,6 @@ setup(
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
     ],
+    cmdclass={'build_ext': build_ext},
+    ext_modules=ext_modules
 )
